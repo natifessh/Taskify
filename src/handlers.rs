@@ -1,11 +1,12 @@
-use std::path;
+use std::{path, sync::{Arc, Mutex}};
 use actix_web::{delete, dev::Path, get, post, put, rt::task, web, HttpResponse, Responder};
 use crate::models::{NewTask, Task, TaskResponse, UpdateTask};
 use rusqlite::{params, Connection, Result};
 
+
 #[get("/tasks")]
-pub async fn get_all_tasks()->HttpResponse{
-    let conn=Connection::open("task.db").unwrap();
+pub async fn get_all_tasks(conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+   let conn=conn.lock().unwrap();
     let mut  stmt=conn.prepare("SELECT * FROM Task").unwrap();
     let tasks=stmt.query_map([], |row|{
         Ok(Task{
@@ -23,8 +24,8 @@ pub async fn get_all_tasks()->HttpResponse{
    
 }
 #[get("tasks/{id}")]
-pub async  fn get_task(path:web::Path<u32>)->HttpResponse{
-    let conn=Connection::open("task.db").unwrap();
+pub async  fn get_task(path:web::Path<u32>,conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+    let conn=conn.lock().unwrap();
     let id=path.into_inner();
     let mut stmt=conn.prepare("SELECT * FROM Task WHERE id = ?1").unwrap();
     let task=stmt.query_map([id], |row|{
@@ -45,8 +46,8 @@ pub async  fn get_task(path:web::Path<u32>)->HttpResponse{
 
 }
 #[get("tasks/s/{status}")]
-pub async fn get_tasks_status(status:web::Path<String>)->HttpResponse{
-    let conn=Connection::open("task.db").unwrap();
+pub async fn get_tasks_status(status:web::Path<String>,conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+    let conn=conn.lock().unwrap();
     let status=status.into_inner();
     let mut stmt=conn.prepare("SELECT * FROM Task WHERE status LIKE '%' || ?1 || '%'").unwrap();
     let tasks=stmt.query_map(params![status.to_string()], |row|{
@@ -65,8 +66,8 @@ pub async fn get_tasks_status(status:web::Path<String>)->HttpResponse{
 
 }
 #[post("/task")]
-pub async fn add_new_task(task:web::Json<NewTask>)->HttpResponse{
-    let conn=Connection::open("task.db").unwrap();
+pub async fn add_new_task(task:web::Json<NewTask>,conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+    let conn=conn.lock().unwrap();
     let result=conn.execute(
         "INSERT INTO Task (user_id,title,description,priority,status) 
          VALUES (?=1,?2,?3,?4,?5)
@@ -84,8 +85,8 @@ pub async fn add_new_task(task:web::Json<NewTask>)->HttpResponse{
         }
 }
 #[post("/tasks")]
-pub async fn add_new_tasks(tasks:web::Json<Vec<NewTask>>)->HttpResponse{
-    let mut conn=Connection::open("task.db").unwrap();
+pub async fn add_new_tasks(tasks:web::Json<Vec<NewTask>>,conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+    let mut conn=conn.lock().unwrap();
     let tx=conn.transaction().unwrap();
     for task in tasks.into_inner(){
         let result=tx.execute(
@@ -107,8 +108,8 @@ pub async fn add_new_tasks(tasks:web::Json<Vec<NewTask>>)->HttpResponse{
     HttpResponse::Ok().json("tasks added successfully")
 }
 #[delete("/tasks/{id}")]
-pub async  fn delete_task(path:web::Path<i32>)->HttpResponse{
-    let conn=Connection::open("task.db").unwrap();
+pub async  fn delete_task(path:web::Path<i32>,conn:web::Data<Arc<Mutex<Connection>>>)->HttpResponse{
+    let conn=conn.lock().unwrap();
     let task_id=path.into_inner();
     let res=conn.execute("DELETE FROM Task WHERE id =?1", params![task_id]);
 
@@ -130,9 +131,9 @@ pub async  fn delete_task(path:web::Path<i32>)->HttpResponse{
 }
 
 #[put("/task/update/{id}")]
-async fn update_task_status(id: web::Path<i32>, updated_task: web::Json<UpdateTask>) -> HttpResponse {
+async fn update_task_status(id: web::Path<i32>, updated_task: web::Json<UpdateTask>,conn:web::Data<Arc<Mutex<Connection>>>) -> HttpResponse {
     let id = id.into_inner();
-    let conn = Connection::open("task.db").unwrap();
+    let conn = conn.lock().unwrap();
     let res = conn.execute("UPDATE Task SET status = ?1 WHERE id = ?2", params![updated_task.status, id]);
     match res {
         Ok(affected_rows) => {
